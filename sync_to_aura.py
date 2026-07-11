@@ -11,23 +11,11 @@ import os
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
+from kg.schema import SCHEMA_STATEMENTS
+
 load_dotenv()
 
-SCHEMA_STATEMENTS = [
-    "CREATE CONSTRAINT person_id   IF NOT EXISTS FOR (n:Person)   REQUIRE n.id IS UNIQUE",
-    "CREATE CONSTRAINT team_id     IF NOT EXISTS FOR (n:Team)     REQUIRE n.id IS UNIQUE",
-    "CREATE CONSTRAINT document_id IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE",
-    "CREATE CONSTRAINT process_id  IF NOT EXISTS FOR (n:Process)  REQUIRE n.id IS UNIQUE",
-    "CREATE CONSTRAINT system_id   IF NOT EXISTS FOR (n:System)   REQUIRE n.id IS UNIQUE",
-    "CREATE INDEX person_name   IF NOT EXISTS FOR (n:Person)   ON (n.name)",
-    "CREATE INDEX team_name     IF NOT EXISTS FOR (n:Team)     ON (n.name)",
-    "CREATE INDEX document_type IF NOT EXISTS FOR (n:Document) ON (n.type)",
-    "CREATE INDEX process_name  IF NOT EXISTS FOR (n:Process)  ON (n.name)",
-    "CREATE INDEX system_name   IF NOT EXISTS FOR (n:System)   ON (n.name)",
-    "CREATE INDEX system_tier   IF NOT EXISTS FOR (n:System)   ON (n.tier)",
-]
-
-NODE_LABELS = ["Team", "Person", "System", "Process", "Document"]
+NODE_LABELS = ["Team", "Person", "System", "Process", "Regulation", "Document"]
 
 
 def _local_driver():
@@ -62,6 +50,7 @@ def _graph_counts(session):
           count { MATCH (n:Person)   RETURN n } AS people,
           count { MATCH (n:System)   RETURN n } AS systems,
           count { MATCH (n:Process)  RETURN n } AS processes,
+          count { MATCH (n:Regulation) RETURN n } AS regulations,
           count { MATCH (n:Document) RETURN n } AS documents,
           count { MATCH ()-[r]->()   RETURN r } AS relationships
     """).single())
@@ -75,6 +64,7 @@ def _print_counts(header, counts):
   People        {counts['people']}
   Systems       {counts['systems']}
   Processes     {counts['processes']}
+  Regulations   {counts['regulations']}
   Documents     {counts['documents']}
   Relationships {counts['relationships']}""")
 

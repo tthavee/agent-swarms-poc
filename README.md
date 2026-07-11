@@ -1,98 +1,100 @@
-# Banking Knowledge Graph — MVP POC
+# Banking Knowledge Graph — Permission-Aware Graph Agent POC
 
-Graph-based enterprise context layer. Sales + Operations teams.
-Proves relationship-based retrieval across team ownership, permissions, and process handoffs.
+A Neo4j knowledge graph as the **enterprise context layer for AI agents**.
 
----
+The claim this POC proves, live: **document search cannot answer questions
+about ownership, permissions, handoffs, or regulatory impact — graph
+traversal can, and an agent scoped to the asker's identity does it safely.**
 
-## Prerequisites
+Every demo prints two columns over the *same corpus*:
 
-- [Neo4j Desktop](https://neo4j.com/download/) — free, runs locally
-- Python 3.10+
-- VS Code with extensions listed below
-
----
-
-## VS Code Extensions (install these first)
-
-| Extension | Publisher | Why |
+| | BM25 keyword search | Graph agent |
 |---|---|---|
-| Neo4j for VS Code | Neo4j | Cypher syntax highlighting + run queries directly |
-| Python | Microsoft | Core Python support |
-| Pylance | Microsoft | Type checking and autocomplete |
-| Python Debugger | Microsoft | Step through scripts |
-| DotENV | mikestead | .env file highlighting |
+| Ownership | docs that *mention* "settlement" | docs *owned by* the team that owns the settlement process |
+| Permissions | returns restricted docs to everyone | filtered through `CAN_READ` — Marcus and Sophie get different answers |
+| Handoffs | no idea | follows `HANDOFF_TO` edges with triggers |
+| Regulation change | docs that literally say "AML" | `Regulation ← GOVERNED_BY ← Process ← REFERENCES ← Document`, across teams |
+
+The agent's identity is bound **server-side** in the tool layer — the model
+never passes "who is asking" and cannot be prompt-injected into reading
+restricted content. Denied access returns the document title and who to
+contact, never the content.
 
 ---
 
-## Neo4j Desktop Setup
+## Data model
 
-1. Download and install Neo4j Desktop from https://neo4j.com/download/
-2. Open Neo4j Desktop → New Project → Add → Local DBMS
-3. Name it `banking-kg-mvp`, set a password (remember it)
-4. Click **Start** — wait for the green dot
-5. Leave default ports: Bolt `7687`, HTTP `7474`
+**Nodes**: `Team` (Sales, Operations, Compliance) · `Person` (10) ·
+`System` (6) · `Process` (7) · `Regulation` (AML Directive, MiFID II, CSDR) ·
+`Document` (24, each with content + classification)
 
----
+**Edges**: `MEMBER_OF` · `OWNS` · `USES` · `RUNS_ON` · `REFERENCES` ·
+`GOVERNED_BY` · `HANDOFF_TO` (with process + trigger) · `CAN_READ` (team- and
+person-level grants)
 
-## Python Setup
+The document content is deliberately adversarial to keyword search: Sales
+docs mention "settlement" in passing (false positives), settlement-process
+runbooks never say the word (false negatives), and the best KYC content sits
+in restricted docs most people can't read.
+
+## Setup
+
+1. **Neo4j Desktop** running locally (Bolt `7687`), or point `.env` at Aura.
+2. ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env   # set NEO4J_PASSWORD and ANTHROPIC_API_KEY
+   ```
+
+## Run
 
 ```bash
-# Clone / open this folder in VS Code, then in the terminal:
-
-python -m venv .venv
-
-# Mac / Linux
-source .venv/bin/activate
-
-# Windows
-.venv\Scripts\activate
-
-pip install -r requirements.txt
+python 01_setup.py --reset   # schema + seed (idempotent; --reset wipes first)
+python 02_compare.py         # THE DEMO: search vs agent, side by side
+python 03_chat.py --as "Marcus Webb"   # free-form chat as any identity
 ```
 
----
-
-## Configure credentials
-
-```bash
-cp .env.example .env
-# Edit .env and set NEO4J_PASSWORD to whatever you chose in Neo4j Desktop
-```
-
----
-
-## Run in order
-
-```bash
-python 01_setup_schema.py     # Creates constraints and indexes
-python 02_seed_data.py        # Loads teams, people, systems, processes, documents
-python 03_proof_queries.py    # Runs the 3 MVP proof queries + prints results
-```
-
----
-
-## What success looks like
-
-`03_proof_queries.py` prints a results table for each of the 3 proof queries.
-These are questions that pure keyword or vector search cannot answer correctly
-because they require traversing ownership, permission, and handoff relationships.
-
-Run the same natural-language questions through any document search tool
-against the same document titles — compare the results. That delta is the POC.
-
----
-
-## Project structure
+Try the same question as different people in `03_chat.py`:
 
 ```
-banking-kg-mvp/
-├── .env.example          # Credential template
-├── .env                  # Your local credentials (gitignored)
-├── README.md
-├── requirements.txt
-├── connect.py            # Shared Neo4j driver helper
-├── 01_setup_schema.py    # Constraints + indexes
-├── 02_seed_data.py       # Sample banking graph data
-└── 03_proof_queries.py   # 3 proof queries with formatted output
+python 03_chat.py --as "Marcus Webb"     # Sales RM — limited view
+python 03_chat.py --as "Sophie Müller"   # Head of Ops — sees ops runbooks
+python 03_chat.py --as "Elena Vasquez"   # Head of Compliance
+you> what can I read about the KYC process?
 ```
+
+## Layout
+
+```
+kg/
+├── config.py        # env + Neo4j driver
+├── schema.py        # constraints + indexes
+├── data.py          # seed data (docs include content)
+├── seed.py          # idempotent loader
+├── baseline.py      # BM25 keyword search — the strawman
+├── graph_tools.py   # permission-aware retrieval, identity bound server-side
+└── agent.py         # Claude agent (tool runner, claude-opus-4-8)
+01_setup.py          # schema + seed
+02_compare.py        # side-by-side demo
+03_chat.py           # identity-scoped REPL
+sync_to_aura.py      # mirror local graph → Neo4j Aura
+```
+
+## How permissions work
+
+`kg/graph_tools.py` builds a `GraphToolkit` bound to one `Person` at
+construction. Every Cypher query embeds:
+
+```cypher
+EXISTS { (:Person {id: $person_id})-[:CAN_READ]->(d) }
+OR EXISTS { (:Person {id: $person_id})-[:MEMBER_OF]->(:Team)-[:CAN_READ]->(d) }
+```
+
+`search_documents` returns inaccessible matches as metadata-only with a
+contact ("ask Sophie Müller"); `read_document` refuses outright. The LLM
+only ever sees what the person may see.
+
+## Cloud sync
+
+`python sync_to_aura.py` mirrors the local graph into Neo4j Aura
+(MERGE-based, safe to re-run). Set the `NEO4J_AURA_*` vars in `.env`.

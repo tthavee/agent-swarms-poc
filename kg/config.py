@@ -1,18 +1,19 @@
 """
-connect.py — shared Neo4j driver helper.
-All scripts import get_driver() from here.
+kg/config.py — environment loading and Neo4j driver factory.
+All scripts get their driver from get_driver().
 """
 
 import os
-from neo4j import GraphDatabase
+
 from dotenv import load_dotenv
+from neo4j import GraphDatabase
 
 load_dotenv()
 
 
 def get_driver():
-    uri      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
-    user     = os.getenv("NEO4J_USER",     "neo4j")
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    user = os.getenv("NEO4J_USER", "neo4j")
     password = os.getenv("NEO4J_PASSWORD")
 
     if not password:
