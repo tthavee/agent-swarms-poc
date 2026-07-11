@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { InteractiveNvlWrapper } from "@neo4j-nvl/react";
 import type NVL from "@neo4j-nvl/base";
 import type { Node, Relationship } from "@neo4j-nvl/base";
 import type { GraphPayload } from "@/lib/api";
+import DetailsCard, { type Selection } from "@/components/DetailsCard";
 
 const LABEL_COLORS: Record<string, string> = {
   Team: "#f59e0b",
@@ -39,12 +40,22 @@ const LEGEND = [
 export default function GraphPane({
   graph,
   highlighted,
+  personId,
   personName,
 }: {
   graph: GraphPayload | null;
   highlighted: Set<string>;
+  personId: string;
   personName: string;
 }) {
+  const [selection, setSelection] = useState<Selection | null>(null);
+
+  // clear stale popups when the persona (and thus access view) changes
+  useEffect(() => setSelection(null), [personId]);
+
+  const selectedId =
+    selection?.kind === "node" ? selection.node.id : selection?.rel.id;
+
   const { nodes, rels } = useMemo(() => {
     if (!graph) return { nodes: [] as Node[], rels: [] as Relationship[] };
     const nodes: Node[] = graph.nodes.map((n) => {
@@ -59,7 +70,7 @@ export default function GraphPane({
             : DOC_DENIED
           : LABEL_COLORS[n.label] ?? "#94a3b8",
         size: (LABEL_SIZES[n.label] ?? 24) * (cited ? 1.7 : 1),
-        selected: cited,
+        selected: cited || n.id === selectedId,
       };
     });
     const rels: Relationship[] = graph.relationships.map((r) => ({
@@ -67,10 +78,11 @@ export default function GraphPane({
       from: r.source,
       to: r.target,
       captions: [{ value: r.type }],
-      color: "#3f3f46",
+      color: r.id === selectedId ? "#e4e4e7" : "#3f3f46",
+      selected: r.id === selectedId,
     }));
     return { nodes, rels };
-  }, [graph, highlighted]);
+  }, [graph, highlighted, selectedId]);
 
   const nvlRef = useRef<NVL>(null);
   const nodeCount = graph?.nodes.length ?? 0;
@@ -85,6 +97,22 @@ export default function GraphPane({
     return () => timers.forEach(clearTimeout);
   }, [nodeCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleNodeClick = (node: Node) => {
+    const full = graph?.nodes.find((n) => n.id === node.id);
+    setSelection(full ? { kind: "node", node: full } : null);
+  };
+
+  const handleRelClick = (rel: Relationship) => {
+    const full = graph?.relationships.find((r) => r.id === rel.id);
+    if (!full) return setSelection(null);
+    setSelection({
+      kind: "rel",
+      rel: full,
+      from: graph?.nodes.find((n) => n.id === full.source),
+      to: graph?.nodes.find((n) => n.id === full.target),
+    });
+  };
+
   return (
     <div className="relative h-full w-full">
       {graph ? (
@@ -97,12 +125,27 @@ export default function GraphPane({
             renderer: "canvas",
             layout: "d3Force",
           }}
-          mouseEventCallbacks={{ onZoom: true, onDrag: true, onPan: true }}
+          mouseEventCallbacks={{
+            onZoom: true,
+            onDrag: true,
+            onPan: true,
+            onNodeClick: handleNodeClick,
+            onRelationshipClick: handleRelClick,
+            onCanvasClick: () => setSelection(null),
+          }}
         />
       ) : (
         <div className="flex h-full items-center justify-center text-zinc-500">
           loading graph…
         </div>
+      )}
+
+      {selection && (
+        <DetailsCard
+          selection={selection}
+          personId={personId}
+          onClose={() => setSelection(null)}
+        />
       )}
 
       {/* legend */}

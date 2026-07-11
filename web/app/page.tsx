@@ -78,6 +78,7 @@ export default function Home() {
           <GraphPane
             graph={graph}
             highlighted={highlighted}
+            personId={personId}
             personName={person?.name ?? "…"}
           />
         </section>

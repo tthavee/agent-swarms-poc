@@ -66,27 +66,43 @@ def people():
 @app.get("/graph")
 def graph(person: str):
     nodes = _run(
-        f"""
+        """
         MATCH (n) WHERE n.id IS NOT NULL
         RETURN n.id AS id, labels(n)[0] AS label,
                coalesce(n.name, n.title) AS caption,
                n.classification AS classification,
+               properties(n) AS props,
                CASE WHEN n:Document THEN
-                 EXISTS {{ MATCH (:Person {{id: $person_id}})-[:CAN_READ]->(n) }}
-                 OR EXISTS {{ MATCH (:Person {{id: $person_id}})-[:MEMBER_OF]->(:Team)-[:CAN_READ]->(n) }}
+                 EXISTS { MATCH (:Person {id: $person_id})-[:CAN_READ]->(n) }
+                 OR EXISTS { MATCH (:Person {id: $person_id})-[:MEMBER_OF]->(:Team)-[:CAN_READ]->(n) }
                ELSE null END AS accessible
         """,
         person_id=person,
     )
+    # Popups show doc content via /document (permission-checked) — never here.
+    for n in nodes:
+        n["props"].pop("content", None)
+        n["props"].pop("id", None)
     rels = _run(
         """
         MATCH (a)-[r]->(b)
         WHERE a.id IS NOT NULL AND b.id IS NOT NULL
         RETURN a.id AS source, b.id AS target, type(r) AS type,
+               properties(r) AS props,
                a.id + '|' + type(r) + '|' + b.id AS id
         """
     )
     return {"nodes": nodes, "relationships": rels}
+
+
+@app.get("/document/{doc_id}")
+def document(doc_id: str, person: str):
+    """Permission-checked document read for the details popup."""
+    try:
+        toolkit = GraphToolkit(driver, person)
+    except PersonNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return toolkit.read_document(doc_id)
 
 
 class ChatRequest(BaseModel):

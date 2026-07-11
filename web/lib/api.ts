@@ -16,6 +16,7 @@ export type GraphNode = {
   label: "Team" | "Person" | "Process" | "System" | "Regulation" | "Document";
   caption: string;
   classification: string | null;
+  props: Record<string, unknown>;
   accessible: boolean | null; // only set for Document nodes
 };
 
@@ -24,7 +25,31 @@ export type GraphRel = {
   source: string;
   target: string;
   type: string;
+  props: Record<string, unknown>;
 };
+
+// Permission-checked read: either content, or an access-denied shape.
+export type DocumentDetails = {
+  id: string;
+  title: string;
+  type?: string;
+  classification?: string;
+  owner_team?: string;
+  content?: string;
+  access?: "DENIED";
+  reason?: string;
+  contact?: string;
+  error?: string;
+};
+
+export async function fetchDocument(
+  docId: string,
+  personId: string,
+): Promise<DocumentDetails> {
+  const res = await fetch(`${API_URL}/document/${docId}?person=${personId}`);
+  if (!res.ok) throw new Error(`GET /document ${res.status}`);
+  return res.json();
+}
 
 export type GraphPayload = { nodes: GraphNode[]; relationships: GraphRel[] };
 
