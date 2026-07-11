@@ -73,15 +73,15 @@ export default function Home() {
         </div>
       )}
 
-      <main className="flex min-h-0 flex-1">
-        <section className="min-w-0 flex-1 border-r border-zinc-800">
+      <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <section className="min-h-[40%] min-w-0 flex-1 border-b border-zinc-800 lg:border-b-0 lg:border-r">
           <GraphPane
             graph={graph}
             highlighted={highlighted}
             personName={person?.name ?? "…"}
           />
         </section>
-        <aside className="flex w-[440px] shrink-0 flex-col">
+        <aside className="flex min-h-0 w-full shrink-0 flex-col lg:h-auto lg:w-[440px]">
           <ChatPane
             sessionId={sessionId}
             personId={personId}

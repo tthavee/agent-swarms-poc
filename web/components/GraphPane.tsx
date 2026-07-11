@@ -106,7 +106,7 @@ export default function GraphPane({
       )}
 
       {/* legend */}
-      <div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-zinc-800 bg-zinc-950/80 px-4 py-3 text-xs backdrop-blur">
+      <div className="pointer-events-none absolute bottom-4 left-4 hidden rounded-xl border border-zinc-800 bg-zinc-950/80 px-4 py-3 text-xs backdrop-blur lg:block">
         <div className="mb-2 font-medium text-zinc-300">
           Access view · {personName}
         </div>
