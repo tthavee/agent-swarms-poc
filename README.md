@@ -54,6 +54,24 @@ python 02_compare.py         # THE DEMO: search vs agent, side by side
 python 03_chat.py --as "Marcus Webb"   # free-form chat as any identity
 ```
 
+## Web UI (React + NVL + FastAPI)
+
+Two-pane app: interactive graph visualization (Neo4j NVL) + streaming chat,
+with a persona switcher. Switching who is "asking" recolors the graph by
+document access and resets the conversation to that identity.
+
+```bash
+# terminal 1 — API
+uvicorn api.main:app --port 8000
+
+# terminal 2 — web app (first time: cd web && npm install)
+cd web && npm run dev        # → http://localhost:3000
+```
+
+Ask a question and watch: tool calls stream as steps in the chat, the answer
+streams token by token, and the documents the agent consulted light up in the
+graph — green if readable, dark red if access was denied.
+
 Try the same question as different people in `03_chat.py`:
 
 ```
@@ -73,7 +91,10 @@ kg/
 ├── seed.py          # idempotent loader
 ├── baseline.py      # BM25 keyword search — the strawman
 ├── graph_tools.py   # permission-aware retrieval, identity bound server-side
-└── agent.py         # Claude agent (tool runner, claude-opus-4-8)
+└── agent.py         # Claude agent (tool runner, claude-opus-4-8, SSE streaming)
+api/
+└── main.py          # FastAPI: /people, /graph (access-annotated), /chat (SSE)
+web/                 # Next.js + Tailwind + @neo4j-nvl/react two-pane app
 01_setup.py          # schema + seed
 02_compare.py        # side-by-side demo
 03_chat.py           # identity-scoped REPL

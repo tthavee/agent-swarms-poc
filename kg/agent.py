@@ -144,3 +144,54 @@ class GraphAgent:
             self.messages.append({"role": "assistant", "content": answer or "(no answer)"})
 
         return AgentResult(answer=answer, tool_calls=tool_calls)
+
+    def ask_stream(self, question: str, remember: bool = True):
+        """Streaming variant of ask() for the web API.
+
+        Yields event dicts:
+          {"type": "text",      "text": "..."}                token deltas
+          {"type": "tool_call", "tool": "...", "input": {..}} per tool call
+          {"type": "citations", "docs": [{"id", "accessible"}]}
+          {"type": "done",      "answer": "full text"}
+        """
+        self.toolkit.touched_docs.clear()
+        messages = self.messages + [{"role": "user", "content": question}]
+        runner = self.client.beta.messages.tool_runner(
+            model=MODEL,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            system=self.system,
+            tools=self.tools,
+            messages=messages,
+            stream=True,
+        )
+
+        answer_parts: list[str] = []
+        for stream in runner:
+            started_text = False
+            for event in stream:
+                if (event.type == "content_block_delta"
+                        and event.delta.type == "text_delta"):
+                    if not started_text and answer_parts:
+                        # paragraph break between text from separate agent turns
+                        answer_parts.append("\n\n")
+                        yield {"type": "text", "text": "\n\n"}
+                    started_text = True
+                    answer_parts.append(event.delta.text)
+                    yield {"type": "text", "text": event.delta.text}
+            final = stream.get_final_message()
+            for block in final.content:
+                if block.type == "tool_use":
+                    yield {"type": "tool_call", "tool": block.name, "input": block.input}
+
+        yield {
+            "type": "citations",
+            "docs": [{"id": doc_id, "accessible": ok}
+                     for doc_id, ok in self.toolkit.touched_docs.items()],
+        }
+
+        answer = "".join(answer_parts).strip()
+        if remember:
+            self.messages.append({"role": "user", "content": question})
+            self.messages.append({"role": "assistant", "content": answer or "(no answer)"})
+        yield {"type": "done", "answer": answer}

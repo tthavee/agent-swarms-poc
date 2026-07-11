@@ -26,7 +26,7 @@ class GraphToolkit:
         rec = self._run(
             """
             MATCH (p:Person)-[:MEMBER_OF]->(t:Team)
-            WHERE toLower(p.name) = toLower($name)
+            WHERE toLower(p.name) = toLower($name) OR p.id = $name
             RETURN p.id AS id, p.name AS name, p.role AS role, p.email AS email,
                    t.id AS team_id, t.name AS team_name
             """,
@@ -35,6 +35,9 @@ class GraphToolkit:
         if not rec:
             raise PersonNotFound(f"No person named {person_name!r} in the graph.")
         self.person = rec[0]
+        # doc ids surfaced by tools during the current question, id → accessible.
+        # Consumed by the API layer to highlight cited nodes in the UI.
+        self.touched_docs: dict[str, bool] = {}
 
     def _run(self, cypher: str, **params) -> list[dict]:
         with self.driver.session() as session:
@@ -104,6 +107,7 @@ class GraphToolkit:
         )
         results = []
         for r in rows:
+            self.touched_docs[r["id"]] = bool(r["accessible"])
             entry = {k: r[k] for k in
                      ("id", "title", "type", "classification", "owner_team", "accessible")}
             if not r["accessible"]:
@@ -129,6 +133,7 @@ class GraphToolkit:
         if not rows:
             return {"error": f"No document with id or title {doc_id!r}."}
         r = rows[0]
+        self.touched_docs[r["id"]] = bool(r["accessible"])
         if not r["accessible"]:
             return {
                 "id": r["id"], "title": r["title"],
@@ -178,6 +183,8 @@ class GraphToolkit:
             """,
             name=process_name, person_id=self.person["id"],
         )
+        for d in docs:
+            self.touched_docs[d["id"]] = bool(d["accessible"])
         result["documents"] = [
             {k: d[k] for k in ("id", "title", "classification", "owner_team", "accessible")}
             for d in docs
@@ -199,6 +206,8 @@ class GraphToolkit:
         )
         if not rows:
             return {"error": f"No team matching {team_name!r}."}
+        for r in rows:
+            self.touched_docs[r["id"]] = bool(r["accessible"])
         return {
             "team": rows[0]["owner_team"],
             "documents": [
@@ -231,6 +240,10 @@ class GraphToolkit:
         )
         if not rows:
             return {"error": f"No regulation matching {regulation_name!r}."}
+        for r in rows:
+            for d in r["documents"]:
+                if d:
+                    self.touched_docs[d["id"]] = bool(d["accessible"])
         return {
             "regulation": rows[0]["regulation"],
             "summary": rows[0]["summary"],
